@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Street A Observation GPS Tracker (WGS-84)</title>
+  <title>Street A Observation GPS Tracker (Calibrated)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -71,10 +71,10 @@
       background: var(--accent);
       color: #000;
       border: none;
-      padding: 12px;
+      padding: 10px 12px;
       border-radius: 8px;
       font-weight: bold;
-      font-size: 1rem;
+      font-size: 0.95rem;
       cursor: pointer;
       width: 100%;
     }
@@ -82,12 +82,31 @@
       background: rgba(255,255,255,0.1);
       color: var(--text);
     }
+    button.small {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      width: auto;
+    }
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    select {
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid var(--accent);
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      width: 100%;
+    }
     .zone-list {
       display: flex;
       flex-direction: column;
       gap: 6px;
       margin-top: 10px;
-      max-height: 220px;
+      max-height: 200px;
       overflow-y: auto;
     }
     .zone-item {
@@ -117,45 +136,62 @@
     
     <div class="grid">
       <div class="grid-item">
-        <span>ACTIVE GPS LAT (WGS)</span>
-        <strong id="val-lat">--</strong>
+        <span>RAW GPS (WGS-84)</span>
+        <strong id="val-raw">--</strong>
       </div>
       <div class="grid-item">
-        <span>ACTIVE GPS LON (WGS)</span>
-        <strong id="val-lon">--</strong>
+        <span>CALIBRATED (EVALUATED)</span>
+        <strong id="val-calibrated">--</strong>
       </div>
       <div class="grid-item">
-        <span>CONVERTED LAT (GCJ-02)</span>
-        <strong id="val-gcj-lat">--</strong>
+        <span>ACTIVE OFFSET (LAT / LON)</span>
+        <strong id="val-offset">0.000000 / 0.000000</strong>
       </div>
       <div class="grid-item">
-        <span>CONVERTED LON (GCJ-02)</span>
-        <strong id="val-gcj-lon">--</strong>
-      </div>
-      <div class="grid-item" style="grid-column: span 2;">
         <span>GPS ACCURACY</span>
         <strong id="val-acc">--</strong>
       </div>
     </div>
   </div>
 
-  <!-- Controls -->
-  <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
-    <button id="btn-toggle" onclick="toggleTracking()">Start GPS Tracking</button>
-    <button class="secondary" onclick="testAudio()">Test Speech Audio</button>
+  <!-- Calibration Controls -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 10px;">
+    <h3 style="margin: 0; color: var(--accent); font-size: 1.05rem;">🎯 Live Position Calibration</h3>
+    <div style="font-size: 0.8rem; color: var(--text-dim);">
+      Standing at a known spot? Select your actual zone and tap Calibrate:
+    </div>
+    
+    <div style="display: flex; gap: 8px;">
+      <select id="cal-zone-select"></select>
+      <button style="width: 140px;" onclick="calibrateToSelectedZone()">Calibrate</button>
+    </div>
+
+    <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px;">Manual Nudge:</div>
+    <div class="btn-group">
+      <button class="secondary small" onclick="nudgeOffset(0, 0.000588)">+50m East</button>
+      <button class="secondary small" onclick="nudgeOffset(0, -0.000588)">-50m West</button>
+      <button class="secondary small" onclick="nudgeOffset(0.00009, 0)">+10m North</button>
+      <button class="secondary small" onclick="nudgeOffset(-0.00009, 0)">-10m South</button>
+      <button class="secondary small" style="color: var(--danger);" onclick="resetCalibration()">Reset Offset</button>
+    </div>
   </div>
 
-  <!-- Reference Points & Zones -->
-  <div class="card">
-    <h3 style="margin-top: 0;">Loaded Observation Zones (WGS-84)</h3>
-    <div style="font-size: 0.8rem; color: var(--text-dim);">
-      Lat Threshold: 40.136374 (North = Leaving Street A)
+  <!-- Main Controls -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
+    <button id="btn-toggle" onclick="toggleTracking()">Start GPS Tracking</button>
+    <div style="display: flex; gap: 8px;">
+      <button class="secondary" style="flex: 1;" onclick="testAudio()">Test Speech</button>
+      <button class="secondary" style="flex: 1;" id="btn-gcj-toggle" onclick="toggleGcjTransform()">GCJ-02: ON</button>
     </div>
+  </div>
+
+  <!-- Loaded Zones -->
+  <div class="card">
+    <h3 style="margin-top: 0; font-size: 1rem;">Loaded Observation Zones</h3>
     <div id="zone-list" class="zone-list"></div>
   </div>
 
   <script>
-    // Boundary points sourced directly from boundary-pointsA-WGS.csv (WGS-84 Datum)
     const boundaryPoints = [
       { id: 1, lat: 40.135387, lon: 116.698380 },
       { id: 2, lat: 40.135328, lon: 116.699308 },
@@ -180,8 +216,14 @@
     let currentZone = null;
     let isNorthOfStreetA = false;
     let speechSynth = window.speechSynthesis;
+    let applyGcjTransform = true;
+    let lastRawLat = null;
+    let lastRawLon = null;
 
-    // Helper functions for optional GCJ-02 visualization on Chinese map services
+    // Offsets stored in localStorage
+    let offsetLat = parseFloat(localStorage.getItem('offsetLat') || '0');
+    let offsetLon = parseFloat(localStorage.getItem('offsetLon') || '0');
+
     function transformLat(x, y) {
       let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
       ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
@@ -212,19 +254,75 @@
       return { lat: lat + dLat, lon: lon + dLon };
     }
 
-    function renderZoneList() {
+    function initUI() {
+      const select = document.getElementById('cal-zone-select');
       const container = document.getElementById('zone-list');
-      let html = '';
+      let selectHtml = '';
+      let listHtml = '';
+
       for (let i = 0; i < boundaryPoints.length - 1; i++) {
         const zoneName = `Zone A${i + 1}`;
         const p1 = boundaryPoints[i];
         const p2 = boundaryPoints[i + 1];
-        html += `<div class="zone-item" id="item-A${i + 1}">
+        
+        selectHtml += `<option value="${i}">I am currently in ${zoneName}</option>`;
+        listHtml += `<div class="zone-item" id="item-A${i + 1}">
           <strong>${zoneName}</strong>
           <span>Pts ${p1.id}–${p2.id} (${p1.lon.toFixed(5)} to ${p2.lon.toFixed(5)})</span>
         </div>`;
       }
-      container.innerHTML = html;
+      select.innerHTML = selectHtml;
+      container.innerHTML = listHtml;
+      updateOffsetDisplay();
+    }
+
+    function updateOffsetDisplay() {
+      document.getElementById('val-offset').textContent = `${offsetLat.toFixed(6)} / ${offsetLon.toFixed(6)}`;
+      localStorage.setItem('offsetLat', offsetLat.toString());
+      localStorage.setItem('offsetLon', offsetLon.toString());
+    }
+
+    function calibrateToSelectedZone() {
+      if (lastRawLat === null || lastRawLon === null) {
+        alert("Please start GPS tracking first so the app can detect your current location.");
+        return;
+      }
+      const zoneIdx = parseInt(document.getElementById('cal-zone-select').value);
+      const p1 = boundaryPoints[zoneIdx];
+      const p2 = boundaryPoints[zoneIdx + 1];
+      const targetLon = (p1.lon + p2.lon) / 2.0; // midpoint of zone
+      const targetLat = (p1.lat + p2.lat) / 2.0;
+
+      let basePos = { lat: lastRawLat, lon: lastRawLon };
+      if (applyGcjTransform) {
+        basePos = wgs84ToGcj02(lastRawLat, lastRawLon);
+      }
+
+      offsetLon = targetLon - basePos.lon;
+      offsetLat = targetLat - basePos.lat;
+      updateOffsetDisplay();
+      processLocation(lastRawLat, lastRawLon);
+      speakAlert(`Calibrated to Zone A${zoneIdx + 1}`);
+    }
+
+    function nudgeOffset(dLat, dLon) {
+      offsetLat += dLat;
+      offsetLon += dLon;
+      updateOffsetDisplay();
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
+    }
+
+    function resetCalibration() {
+      offsetLat = 0;
+      offsetLon = 0;
+      updateOffsetDisplay();
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
+    }
+
+    function toggleGcjTransform() {
+      applyGcjTransform = !applyGcjTransform;
+      document.getElementById('btn-gcj-toggle').textContent = `GCJ-02: ${applyGcjTransform ? 'ON' : 'OFF'}`;
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
     }
 
     function speakAlert(text) {
@@ -237,17 +335,23 @@
     }
 
     function processLocation(rawLat, rawLon) {
-      // 1. Evaluate Direct Native WGS-84 Position against WGS-84 CSV Boundaries
-      document.getElementById('val-lat').textContent = rawLat.toFixed(6);
-      document.getElementById('val-lon').textContent = rawLon.toFixed(6);
+      lastRawLat = rawLat;
+      lastRawLon = rawLon;
 
-      // Compute GCJ-02 purely for secondary display reference
-      const gcj = wgs84ToGcj02(rawLat, rawLon);
-      document.getElementById('val-gcj-lat').textContent = gcj.lat.toFixed(6);
-      document.getElementById('val-gcj-lon').textContent = gcj.lon.toFixed(6);
+      document.getElementById('val-raw').textContent = `${rawLat.toFixed(5)}, ${rawLon.toFixed(5)}`;
 
-      // 2. Latitude Boundary Check (Street A Northern Threshold)
-      const northNow = rawLat > LAT_THRESHOLD;
+      let pos = { lat: rawLat, lon: rawLon };
+      if (applyGcjTransform) {
+        pos = wgs84ToGcj02(rawLat, rawLon);
+      }
+
+      const evalLat = pos.lat + offsetLat;
+      const evalLon = pos.lon + offsetLon;
+
+      document.getElementById('val-calibrated').textContent = `${evalLat.toFixed(5)}, ${evalLon.toFixed(5)}`;
+
+      // Street boundary evaluation
+      const northNow = evalLat > LAT_THRESHOLD;
       const streetDisplay = document.getElementById('street-status');
 
       if (northNow) {
@@ -266,21 +370,20 @@
         }
       }
 
-      // 3. Longitude Zone Detection (Direct WGS-84 evaluation against CSV points)
+      // Zone evaluation
       let detectedZone = "Outside Zones";
       const minLon = boundaryPoints[0].lon;
       const maxLon = boundaryPoints[boundaryPoints.length - 1].lon;
 
-      if (rawLon >= minLon && rawLon <= maxLon) {
+      if (evalLon >= minLon && evalLon <= maxLon) {
         for (let i = 0; i < boundaryPoints.length - 1; i++) {
-          if (rawLon >= boundaryPoints[i].lon && rawLon <= boundaryPoints[i + 1].lon) {
+          if (evalLon >= boundaryPoints[i].lon && evalLon <= boundaryPoints[i + 1].lon) {
             detectedZone = `Zone A${i + 1}`;
             break;
           }
         }
       }
 
-      // Highlight active zone in UI
       document.querySelectorAll('.zone-item').forEach(el => el.classList.remove('active'));
       if (detectedZone.startsWith("Zone")) {
         const activeItem = document.getElementById(`item-${detectedZone.replace(' ', '')}`);
@@ -289,7 +392,6 @@
 
       document.getElementById('active-zone').textContent = detectedZone;
 
-      // 4. Zone Speech Alerts
       if (detectedZone !== currentZone) {
         if (detectedZone === "Outside Zones") {
           speakAlert("Leaving all zones");
@@ -305,7 +407,7 @@
       const lon = position.coords.longitude;
       const acc = position.coords.accuracy;
 
-      document.getElementById('val-acc').textContent = `±${acc.toFixed(1)} meters`;
+      document.getElementById('val-acc').textContent = `±${acc.toFixed(1)} m`;
       document.getElementById('gps-status').textContent = "Tracking Active";
       document.getElementById('gps-status').style.color = "var(--success)";
 
@@ -354,7 +456,7 @@
       speakAlert("Audio system initialized");
     }
 
-    renderZoneList();
+    initUI();
   </script>
 </body>
 </html>
