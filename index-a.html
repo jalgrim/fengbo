@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Street A Observation GPS Tracker</title>
+  <title>Street A Observation GPS Tracker (WGS-84)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -117,19 +117,19 @@
     
     <div class="grid">
       <div class="grid-item">
-        <span>RAW GPS LAT</span>
+        <span>ACTIVE GPS LAT (WGS)</span>
         <strong id="val-lat">--</strong>
       </div>
       <div class="grid-item">
-        <span>RAW GPS LON</span>
+        <span>ACTIVE GPS LON (WGS)</span>
         <strong id="val-lon">--</strong>
       </div>
       <div class="grid-item">
-        <span>CONVERTED LAT (GCJ)</span>
+        <span>CONVERTED LAT (GCJ-02)</span>
         <strong id="val-gcj-lat">--</strong>
       </div>
       <div class="grid-item">
-        <span>CONVERTED LON (GCJ)</span>
+        <span>CONVERTED LON (GCJ-02)</span>
         <strong id="val-gcj-lon">--</strong>
       </div>
       <div class="grid-item" style="grid-column: span 2;">
@@ -147,7 +147,7 @@
 
   <!-- Reference Points & Zones -->
   <div class="card">
-    <h3 style="margin-top: 0;">Loaded Observation Zones</h3>
+    <h3 style="margin-top: 0;">Loaded Observation Zones (WGS-84)</h3>
     <div style="font-size: 0.8rem; color: var(--text-dim);">
       Lat Threshold: 40.136374 (North = Leaving Street A)
     </div>
@@ -155,7 +155,7 @@
   </div>
 
   <script>
-    // Boundary points from obs-area_boundary-pointsA.csv (GCJ-02)
+    // Boundary points sourced directly from boundary-pointsA-WGS.csv (WGS-84 Datum)
     const boundaryPoints = [
       { id: 1, lat: 40.135387, lon: 116.698380 },
       { id: 2, lat: 40.135328, lon: 116.699308 },
@@ -181,7 +181,7 @@
     let isNorthOfStreetA = false;
     let speechSynth = window.speechSynthesis;
 
-    // Standard WGS-84 to GCJ-02 ("Mars Coordinates") Offset Algorithm
+    // Helper functions for optional GCJ-02 visualization on Chinese map services
     function transformLat(x, y) {
       let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
       ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
@@ -237,16 +237,17 @@
     }
 
     function processLocation(rawLat, rawLon) {
-      // 1. Convert raw WGS-84 GPS coordinates to GCJ-02 frame
+      // 1. Evaluate Direct Native WGS-84 Position against WGS-84 CSV Boundaries
+      document.getElementById('val-lat').textContent = rawLat.toFixed(6);
+      document.getElementById('val-lon').textContent = rawLon.toFixed(6);
+
+      // Compute GCJ-02 purely for secondary display reference
       const gcj = wgs84ToGcj02(rawLat, rawLon);
-      const lat = gcj.lat;
-      const lon = gcj.lon;
+      document.getElementById('val-gcj-lat').textContent = gcj.lat.toFixed(6);
+      document.getElementById('val-gcj-lon').textContent = gcj.lon.toFixed(6);
 
-      document.getElementById('val-gcj-lat').textContent = lat.toFixed(6);
-      document.getElementById('val-gcj-lon').textContent = lon.toFixed(6);
-
-      // 2. Latitude Street Boundary Check
-      const northNow = lat > LAT_THRESHOLD;
+      // 2. Latitude Boundary Check (Street A Northern Threshold)
+      const northNow = rawLat > LAT_THRESHOLD;
       const streetDisplay = document.getElementById('street-status');
 
       if (northNow) {
@@ -265,14 +266,14 @@
         }
       }
 
-      // 3. Longitude Zone Boundary Check (Points 1 to 15)
+      // 3. Longitude Zone Detection (Direct WGS-84 evaluation against CSV points)
       let detectedZone = "Outside Zones";
       const minLon = boundaryPoints[0].lon;
       const maxLon = boundaryPoints[boundaryPoints.length - 1].lon;
 
-      if (lon >= minLon && lon <= maxLon) {
+      if (rawLon >= minLon && rawLon <= maxLon) {
         for (let i = 0; i < boundaryPoints.length - 1; i++) {
-          if (lon >= boundaryPoints[i].lon && lon <= boundaryPoints[i + 1].lon) {
+          if (rawLon >= boundaryPoints[i].lon && rawLon <= boundaryPoints[i + 1].lon) {
             detectedZone = `Zone A${i + 1}`;
             break;
           }
@@ -288,7 +289,7 @@
 
       document.getElementById('active-zone').textContent = detectedZone;
 
-      // 4. Zone Audio Notification Logic
+      // 4. Zone Speech Alerts
       if (detectedZone !== currentZone) {
         if (detectedZone === "Outside Zones") {
           speakAlert("Leaving all zones");
@@ -304,8 +305,6 @@
       const lon = position.coords.longitude;
       const acc = position.coords.accuracy;
 
-      document.getElementById('val-lat').textContent = lat.toFixed(6);
-      document.getElementById('val-lon').textContent = lon.toFixed(6);
       document.getElementById('val-acc').textContent = `±${acc.toFixed(1)} meters`;
       document.getElementById('gps-status').textContent = "Tracking Active";
       document.getElementById('gps-status').style.color = "var(--success)";
