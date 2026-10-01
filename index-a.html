@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Street A Observation GPS Tracker</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --success: #22c55e;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 600px;
+      margin-inline: auto;
+    }
+    h1 { margin: 0; font-size: 1.4rem; text-align: center; color: var(--accent); }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    }
+    .status-box {
+      text-align: center;
+      padding: 16px;
+      border: 2px solid var(--accent);
+    }
+    .zone-display {
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: var(--accent);
+      margin: 6px 0;
+    }
+    .street-display {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--success);
+      margin-bottom: 8px;
+    }
+    .street-display.off-street {
+      color: var(--warning);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 0.85rem;
+    }
+    .grid-item {
+      background: rgba(255,255,255,0.05);
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .grid-item span { display: block; color: var(--text-dim); font-size: 0.75rem; }
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+    .zone-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .zone-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255,255,255,0.05);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .zone-item.active {
+      border: 1px solid var(--accent);
+      background: rgba(56, 189, 248, 0.15);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Street A Observation Tracker</h1>
+
+  <!-- Active Status Display -->
+  <div class="card status-box">
+    <div id="street-status" class="street-display">On Street A</div>
+    <div id="active-zone" class="zone-display">Outside Zones</div>
+    <div id="gps-status" style="color: var(--text-dim); font-size: 0.85rem;">GPS Idle</div>
+    
+    <div class="grid">
+      <div class="grid-item">
+        <span>LATITUDE</span>
+        <strong id="val-lat">--</strong>
+      </div>
+      <div class="grid-item">
+        <span>LONGITUDE</span>
+        <strong id="val-lon">--</strong>
+      </div>
+      <div class="grid-item" style="grid-column: span 2;">
+        <span>GPS ACCURACY</span>
+        <strong id="val-acc">--</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
+    <button id="btn-toggle" onclick="toggleTracking()">Start GPS Tracking</button>
+    <button class="secondary" onclick="testAudio()">Test Speech Audio</button>
+  </div>
+
+  <!-- Reference Points & Zones -->
+  <div class="card">
+    <h3 style="margin-top: 0;">Loaded Observation Zones</h3>
+    <div style="font-size: 0.8rem; color: var(--text-dim);">
+      Lat Threshold: 40.136374 (North = Leaving Street A)
+    </div>
+    <div id="zone-list" class="zone-list"></div>
+  </div>
+
+  <script>
+    // Geo-referenced boundary points from obs-area_boundary-pointsA.csv
+    const boundaryPoints = [
+      { id: 1, lat: 40.135387, lon: 116.698380 },
+      { id: 2, lat: 40.135328, lon: 116.699308 },
+      { id: 3, lat: 40.135271, lon: 116.700233 },
+      { id: 4, lat: 40.135266, lon: 116.701164 },
+      { id: 5, lat: 40.135277, lon: 116.702097 },
+      { id: 6, lat: 40.135280, lon: 116.703027 },
+      { id: 7, lat: 40.135449, lon: 116.703938 },
+      { id: 8, lat: 40.135811, lon: 116.704773 },
+      { id: 9, lat: 40.135869, lon: 116.705690 },
+      { id: 10, lat: 40.135828, lon: 116.706612 },
+      { id: 11, lat: 40.135924, lon: 116.707531 },
+      { id: 12, lat: 40.136098, lon: 116.708427 },
+      { id: 13, lat: 40.135945, lon: 116.709328 },
+      { id: 14, lat: 40.135682, lon: 116.710212 },
+      { id: 15, lat: 40.135427, lon: 116.711111 }
+    ];
+
+    const LAT_THRESHOLD = 40.136374;
+
+    let watchId = null;
+    let currentZone = null;
+    let isNorthOfStreetA = false;
+    let speechSynth = window.speechSynthesis;
+
+    function renderZoneList() {
+      const container = document.getElementById('zone-list');
+      let html = '';
+      for (let i = 0; i < boundaryPoints.length - 1; i++) {
+        const zoneName = `Zone A${i + 1}`;
+        const p1 = boundaryPoints[i];
+        const p2 = boundaryPoints[i + 1];
+        html += `<div class="zone-item" id="item-A${i + 1}">
+          <strong>${zoneName}</strong>
+          <span>Pts ${p1.id}–${p2.id} (${p1.lon.toFixed(5)} to ${p2.lon.toFixed(5)})</span>
+        </div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function speakAlert(text) {
+      if ('speechSynthesis' in window) {
+        speechSynth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        speechSynth.speak(utterance);
+      }
+    }
+
+    function processLocation(lat, lon) {
+      // 1. Latitude Street Boundary Check
+      const northNow = lat > LAT_THRESHOLD;
+      const streetDisplay = document.getElementById('street-status');
+
+      if (northNow) {
+        streetDisplay.textContent = "Leaving Street A (North of threshold)";
+        streetDisplay.className = "street-display off-street";
+        if (!isNorthOfStreetA) {
+          isNorthOfStreetA = true;
+          speakAlert("Leaving street A");
+        }
+      } else {
+        streetDisplay.textContent = "On Street A";
+        streetDisplay.className = "street-display";
+        if (isNorthOfStreetA) {
+          isNorthOfStreetA = false;
+          speakAlert("Entering street A");
+        }
+      }
+
+      // 2. Longitude Zone Boundary Check (Points 1 to 15)
+      let detectedZone = "Outside Zones";
+      const minLon = boundaryPoints[0].lon;
+      const maxLon = boundaryPoints[boundaryPoints.length - 1].lon;
+
+      if (lon >= minLon && lon <= maxLon) {
+        for (let i = 0; i < boundaryPoints.length - 1; i++) {
+          if (lon >= boundaryPoints[i].lon && lon <= boundaryPoints[i + 1].lon) {
+            detectedZone = `Zone A${i + 1}`;
+            break;
+          }
+        }
+      }
+
+      // Highlight active zone in UI
+      document.querySelectorAll('.zone-item').forEach(el => el.classList.remove('active'));
+      if (detectedZone.startsWith("Zone")) {
+        const activeItem = document.getElementById(`item-${detectedZone.replace(' ', '')}`);
+        if (activeItem) activeItem.classList.add('active');
+      }
+
+      document.getElementById('active-zone').textContent = detectedZone;
+
+      // 3. Zone Audio Notification Logic
+      if (detectedZone !== currentZone) {
+        if (detectedZone === "Outside Zones") {
+          speakAlert("Leaving all zones");
+        } else {
+          speakAlert(`Entering ${detectedZone}`);
+        }
+        currentZone = detectedZone;
+      }
+    }
+
+    function handlePosition(position) {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      const acc = position.coords.accuracy;
+
+      document.getElementById('val-lat').textContent = lat.toFixed(6);
+      document.getElementById('val-lon').textContent = lon.toFixed(6);
+      document.getElementById('val-acc').textContent = `±${acc.toFixed(1)} meters`;
+      document.getElementById('gps-status').textContent = "Tracking Active";
+      document.getElementById('gps-status').style.color = "var(--success)";
+
+      processLocation(lat, lon);
+    }
+
+    function handleError(error) {
+      const status = document.getElementById('gps-status');
+      status.style.color = "var(--danger)";
+      switch (error.code) {
+        case error.PERMISSION_DENIED: status.textContent = "Location permission denied."; break;
+        case error.POSITION_UNAVAILABLE: status.textContent = "Location info unavailable."; break;
+        case error.TIMEOUT: status.textContent = "Location request timed out."; break;
+        default: status.textContent = "An unknown GPS error occurred."; break;
+      }
+    }
+
+    function toggleTracking() {
+      const btn = document.getElementById('btn-toggle');
+      if (watchId === null) {
+        if ('geolocation' in navigator) {
+          testAudio();
+          watchId = navigator.geolocation.watchPosition(handlePosition, handleError, {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000
+          });
+          btn.textContent = "Stop GPS Tracking";
+          btn.style.background = "var(--danger)";
+          btn.style.color = "#fff";
+        } else {
+          alert("Geolocation is not supported by your browser.");
+        }
+      } else {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        document.getElementById('gps-status').textContent = "GPS Tracking Stopped";
+        document.getElementById('gps-status').style.color = "var(--text-dim)";
+        btn.textContent = "Start GPS Tracking";
+        btn.style.background = "var(--accent)";
+        btn.style.color = "#000";
+      }
+    }
+
+    function testAudio() {
+      speakAlert("Audio system initialized");
+    }
+
+    renderZoneList();
+  </script>
+</body>
+</html>
