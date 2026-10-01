@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Street B Observation GPS Tracker (Calibrated)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #22c55e; /* Green theme replacing blue */
+      --accent-soft: rgba(34, 197, 94, 0.15);
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --success: #4ade80;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-width: 600px;
+      margin-inline: auto;
+    }
+    h1 { margin: 0; font-size: 1.4rem; text-align: center; color: var(--accent); }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    }
+    .status-box {
+      text-align: center;
+      padding: 16px;
+      border: 2px solid var(--accent);
+    }
+    .zone-display {
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: var(--accent);
+      margin: 6px 0;
+    }
+    .street-display {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--success);
+      margin-bottom: 8px;
+    }
+    .street-display.off-street {
+      color: var(--warning);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 0.82rem;
+    }
+    .grid-item {
+      background: rgba(255,255,255,0.05);
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .grid-item span { display: block; color: var(--text-dim); font-size: 0.72rem; }
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 0.95rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+    button.small {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      width: auto;
+    }
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    select {
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid var(--accent);
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+    .zone-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .zone-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255,255,255,0.05);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .zone-item.active {
+      border: 1px solid var(--accent);
+      background: var(--accent-soft);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Street B Observation Tracker</h1>
+
+  <!-- Active Status Display -->
+  <div class="card status-box">
+    <div id="street-status" class="street-display">On Street B</div>
+    <div id="active-zone" class="zone-display">Outside Zones</div>
+    <div id="gps-status" style="color: var(--text-dim); font-size: 0.85rem;">GPS Idle</div>
+    
+    <div class="grid">
+      <div class="grid-item">
+        <span>RAW GPS (WGS-84)</span>
+        <strong id="val-raw">--</strong>
+      </div>
+      <div class="grid-item">
+        <span>CALIBRATED (EVALUATED)</span>
+        <strong id="val-calibrated">--</strong>
+      </div>
+      <div class="grid-item">
+        <span>ACTIVE OFFSET (LAT / LON)</span>
+        <strong id="val-offset">0.000000 / 0.000000</strong>
+      </div>
+      <div class="grid-item">
+        <span>GPS ACCURACY</span>
+        <strong id="val-acc">--</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calibration Controls -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 10px;">
+    <h3 style="margin: 0; color: var(--accent); font-size: 1.05rem;">🎯 Live Position Calibration</h3>
+    <div style="font-size: 0.8rem; color: var(--text-dim);">
+      Standing at a known spot? Select your actual zone and tap Calibrate:
+    </div>
+    
+    <div style="display: flex; gap: 8px;">
+      <select id="cal-zone-select"></select>
+      <button style="width: 140px;" onclick="calibrateToSelectedZone()">Calibrate</button>
+    </div>
+
+    <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px;">Manual Nudge:</div>
+    <div class="btn-group">
+      <button class="secondary small" onclick="nudgeOffset(0, 0.000588)">+50m East</button>
+      <button class="secondary small" onclick="nudgeOffset(0, -0.000588)">-50m West</button>
+      <button class="secondary small" onclick="nudgeOffset(0.00009, 0)">+10m North</button>
+      <button class="secondary small" onclick="nudgeOffset(-0.00009, 0)">-10m South</button>
+      <button class="secondary small" style="color: var(--danger);" onclick="resetCalibration()">Reset Offset</button>
+    </div>
+  </div>
+
+  <!-- Main Controls -->
+  <div class="card" style="display: flex; flex-direction: column; gap: 8px;">
+    <button id="btn-toggle" onclick="toggleTracking()">Start GPS Tracking</button>
+    <div style="display: flex; gap: 8px;">
+      <button class="secondary" style="flex: 1;" onclick="testAudio()">Test Speech</button>
+      <button class="secondary" style="flex: 1;" id="btn-gcj-toggle" onclick="toggleGcjTransform()">GCJ-02: ON</button>
+    </div>
+  </div>
+
+  <!-- Loaded Zones -->
+  <div class="card">
+    <h3 style="margin-top: 0; font-size: 1rem;">Loaded Observation Zones (Street B)</h3>
+    <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px;">
+      Southern Threshold: 40.136374 (South = Leaving Street B)
+    </div>
+    <div id="zone-list" class="zone-list"></div>
+  </div>
+
+  <script>
+    // Digitized boundaries loaded from boundary-pointsB-WGS.csv (Points 1 through 14 -> Zones B1 to B13)
+    const boundaryPoints = [
+      { id: 1, lat: 40.137631, lon: 116.700071 },
+      { id: 2, lat: 40.137523, lon: 116.700990 },
+      { id: 3, lat: 40.137460, lon: 116.701909 },
+      { id: 4, lat: 40.137377, lon: 116.702829 },
+      { id: 5, lat: 40.137336, lon: 116.703751 },
+      { id: 6, lat: 40.137349, lon: 116.704678 },
+      { id: 7, lat: 40.137290, lon: 116.705597 },
+      { id: 8, lat: 40.137157, lon: 116.706500 },
+      { id: 9, lat: 40.137258, lon: 116.707403 },
+      { id: 10, lat: 40.136962, lon: 116.708282 },
+      { id: 11, lat: 40.136553, lon: 116.709115 },
+      { id: 12, lat: 40.136766, lon: 116.710015 },
+      { id: 13, lat: 40.136800, lon: 116.710936 },
+      { id: 14, lat: 40.136749, lon: 116.711878 }
+    ];
+
+    const LAT_THRESHOLD = 40.136374;
+
+    let watchId = null;
+    let currentZone = null;
+    let isSouthOfStreetB = false;
+    let speechSynth = window.speechSynthesis;
+    let applyGcjTransform = true;
+    let lastRawLat = null;
+    let lastRawLon = null;
+
+    // Independent offsets stored for Street B so they don't clash with Street A
+    let offsetLat = parseFloat(localStorage.getItem('offsetLatB') || '0');
+    let offsetLon = parseFloat(localStorage.getItem('offsetLonB') || '0');
+
+    function transformLat(x, y) {
+      let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+      ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+      ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+      return ret;
+    }
+
+    function transformLon(x, y) {
+      let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+      ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+      ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+      return ret;
+    }
+
+    function wgs84ToGcj02(lat, lon) {
+      const a = 6378137.0;
+      const ee = 0.00669342162296594323;
+      let dLat = transformLat(lon - 105.0, lat - 35.0);
+      let dLon = transformLon(lon - 105.0, lat - 35.0);
+      const radLat = lat / 180.0 * Math.PI;
+      let magic = Math.sin(radLat);
+      magic = 1 - ee * magic * magic;
+      const sqrtMagic = Math.sqrt(magic);
+      dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+      dLon = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+      return { lat: lat + dLat, lon: lon + dLon };
+    }
+
+    function initUI() {
+      const select = document.getElementById('cal-zone-select');
+      const container = document.getElementById('zone-list');
+      let selectHtml = '';
+      let listHtml = '';
+
+      for (let i = 0; i < boundaryPoints.length - 1; i++) {
+        const zoneName = `Zone B${i + 1}`;
+        const p1 = boundaryPoints[i];
+        const p2 = boundaryPoints[i + 1];
+        
+        selectHtml += `<option value="${i}">I am currently in ${zoneName}</option>`;
+        listHtml += `<div class="zone-item" id="item-B${i + 1}">
+          <strong>${zoneName}</strong>
+          <span>Pts ${p1.id}–${p2.id} (${p1.lon.toFixed(5)} to ${p2.lon.toFixed(5)})</span>
+        </div>`;
+      }
+      select.innerHTML = selectHtml;
+      container.innerHTML = listHtml;
+      updateOffsetDisplay();
+    }
+
+    function updateOffsetDisplay() {
+      document.getElementById('val-offset').textContent = `${offsetLat.toFixed(6)} / ${offsetLon.toFixed(6)}`;
+      localStorage.setItem('offsetLatB', offsetLat.toString());
+      localStorage.setItem('offsetLonB', offsetLon.toString());
+    }
+
+    function calibrateToSelectedZone() {
+      if (lastRawLat === null || lastRawLon === null) {
+        alert("Please start GPS tracking first so the app can detect your current location.");
+        return;
+      }
+      const zoneIdx = parseInt(document.getElementById('cal-zone-select').value);
+      const p1 = boundaryPoints[zoneIdx];
+      const p2 = boundaryPoints[zoneIdx + 1];
+      const targetLon = (p1.lon + p2.lon) / 2.0;
+      const targetLat = (p1.lat + p2.lat) / 2.0;
+
+      let basePos = { lat: lastRawLat, lon: lastRawLon };
+      if (applyGcjTransform) {
+        basePos = wgs84ToGcj02(lastRawLat, lastRawLon);
+      }
+
+      offsetLon = targetLon - basePos.lon;
+      offsetLat = targetLat - basePos.lat;
+      updateOffsetDisplay();
+      processLocation(lastRawLat, lastRawLon);
+      speakAlert(`Calibrated to Zone B${zoneIdx + 1}`);
+    }
+
+    function nudgeOffset(dLat, dLon) {
+      offsetLat += dLat;
+      offsetLon += dLon;
+      updateOffsetDisplay();
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
+    }
+
+    function resetCalibration() {
+      offsetLat = 0;
+      offsetLon = 0;
+      updateOffsetDisplay();
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
+    }
+
+    function toggleGcjTransform() {
+      applyGcjTransform = !applyGcjTransform;
+      document.getElementById('btn-gcj-toggle').textContent = `GCJ-02: ${applyGcjTransform ? 'ON' : 'OFF'}`;
+      if (lastRawLat !== null) processLocation(lastRawLat, lastRawLon);
+    }
+
+    function speakAlert(text) {
+      if ('speechSynthesis' in window) {
+        speechSynth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        speechSynth.speak(utterance);
+      }
+    }
+
+    function processLocation(rawLat, rawLon) {
+      lastRawLat = rawLat;
+      lastRawLon = rawLon;
+
+      document.getElementById('val-raw').textContent = `${rawLat.toFixed(5)}, ${rawLon.toFixed(5)}`;
+
+      let pos = { lat: rawLat, lon: rawLon };
+      if (applyGcjTransform) {
+        pos = wgs84ToGcj02(rawLat, rawLon);
+      }
+
+      const evalLat = pos.lat + offsetLat;
+      const evalLon = pos.lon + offsetLon;
+
+      document.getElementById('val-calibrated').textContent = `${evalLat.toFixed(5)}, ${evalLon.toFixed(5)}`;
+
+      // Southern Boundary Logic for Street B
+      // If latitude is less than 40.136374, user is SOUTH of threshold (Leaving Street B)
+      const southNow = evalLat < LAT_THRESHOLD;
+      const streetDisplay = document.getElementById('street-status');
+
+      if (southNow) {
+        streetDisplay.textContent = "Leaving Street B (South of threshold)";
+        streetDisplay.className = "street-display off-street";
+        if (!isSouthOfStreetB) {
+          isSouthOfStreetB = true;
+          speakAlert("Leaving street B");
+        }
+      } else {
+        streetDisplay.textContent = "On Street B";
+        streetDisplay.className = "street-display";
+        if (isSouthOfStreetB) {
+          isSouthOfStreetB = false;
+          speakAlert("Entering street B");
+        }
+      }
+
+      // Zone evaluation (Zones B1 to B13)
+      let detectedZone = "Outside Zones";
+      const minLon = boundaryPoints[0].lon;
+      const maxLon = boundaryPoints[boundaryPoints.length - 1].lon;
+
+      if (evalLon >= minLon && evalLon <= maxLon) {
+        for (let i = 0; i < boundaryPoints.length - 1; i++) {
+          if (evalLon >= boundaryPoints[i].lon && evalLon <= boundaryPoints[i + 1].lon) {
+            detectedZone = `Zone B${i + 1}`;
+            break;
+          }
+        }
+      }
+
+      document.querySelectorAll('.zone-item').forEach(el => el.classList.remove('active'));
+      if (detectedZone.startsWith("Zone")) {
+        const activeItem = document.getElementById(`item-${detectedZone.replace(' ', '')}`);
+        if (activeItem) activeItem.classList.add('active');
+      }
+
+      document.getElementById('active-zone').textContent = detectedZone;
+
+      if (detectedZone !== currentZone) {
+        if (detectedZone === "Outside Zones") {
+          speakAlert("Leaving all zones");
+        } else {
+          speakAlert(`Entering ${detectedZone}`);
+        }
+        currentZone = detectedZone;
+      }
+    }
+
+    function handlePosition(position) {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      const acc = position.coords.accuracy;
+
+      document.getElementById('val-acc').textContent = `±${acc.toFixed(1)} m`;
+      document.getElementById('gps-status').textContent = "Tracking Active";
+      document.getElementById('gps-status').style.color = "var(--success)";
+
+      processLocation(lat, lon);
+    }
+
+    function handleError(error) {
+      const status = document.getElementById('gps-status');
+      status.style.color = "var(--danger)";
+      switch (error.code) {
+        case error.PERMISSION_DENIED: status.textContent = "Location permission denied."; break;
+        case error.POSITION_UNAVAILABLE: status.textContent = "Location info unavailable."; break;
+        case error.TIMEOUT: status.textContent = "Location request timed out."; break;
+        default: status.textContent = "An unknown GPS error occurred."; break;
+      }
+    }
+
+    function toggleTracking() {
+      const btn = document.getElementById('btn-toggle');
+      if (watchId === null) {
+        if ('geolocation' in navigator) {
+          testAudio();
+          watchId = navigator.geolocation.watchPosition(handlePosition, handleError, {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000
+          });
+          btn.textContent = "Stop GPS Tracking";
+          btn.style.background = "var(--danger)";
+          btn.style.color = "#fff";
+        } else {
+          alert("Geolocation is not supported by your browser.");
+        }
+      } else {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        document.getElementById('gps-status').textContent = "GPS Tracking Stopped";
+        document.getElementById('gps-status').style.color = "var(--text-dim)";
+        btn.textContent = "Start GPS Tracking";
+        btn.style.background = "var(--accent)";
+        btn.style.color = "#000";
+      }
+    }
+
+    function testAudio() {
+      speakAlert("Audio system initialized");
+    }
+
+    initUI();
+  </script>
+</body>
+</html>
